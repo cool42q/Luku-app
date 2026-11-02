@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LUKU · smart wardrobe</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+  <!-- Lucide via CDN (react integration will be via lucide-react style, but we use raw svg for simplicity) -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    /* custom scroll and glassmorphism */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: rgba(20, 20, 30, 0.5); border-radius: 10px; }
+    ::-webkit-scrollbar-thumb { background: #7e6b8f; border-radius: 10px; }
+    body { transition: background-color 0.3s ease, color 0.2s ease; }
+    .glass { backdrop-filter: blur(16px) saturate(180%); -webkit-backdrop-filter: blur(16px) saturate(180%); }
+    .glass-dark { background: rgba(15, 15, 25, 0.7); border: 1px solid rgba(255, 255, 255, 0.08); }
+    .glass-light { background: rgba(255, 255, 255, 0.6); border: 1px solid rgba(0, 0, 0, 0.05); }
+    .card-hover { transition: transform 0.2s ease, box-shadow 0.2s ease; }
+    .card-hover:hover { transform: translateY(-4px); box-shadow: 0 20px 30px -10px rgba(0,0,0,0.3); }
+    .fade-in { animation: fadeIn 0.4s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  </style>
+</head>
+<body class="bg-[#0b0b12] text-gray-200 font-sans antialiased">
+
+<div id="root"></div>
+
+<script type="text/babel" src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script type="text/babel">
+  const { useState, useEffect, useMemo, useCallback } = React;
+
+  // -------- MOCK DATA --------
+  const STYLE_VIBES = ["Minimalist", "Streetwear", "Old Money", "Y2K", "Bohemian", "Techwear"];
+  const INFLUENCERS = ["@wisdm", "@fashionbyally", "@sartorial", "@techwear.jpg"];
+  const BRANDS = ["Lemaire", "Jil Sander", "Nike", "Acne Studios", "Miu Miu", "Our Legacy"];
+
+  const INITIAL_WARDROBE = [
+    { id: 'w1', name: 'Oversized Tee', category: 'Tops', color: 'Black', season: 'All', image: '👕', styleTags: ['streetwear','minimalist'] },
+    { id: 'w2', name: 'Linen Shirt', category: 'Tops', color: 'White', season: 'Summer', image: '👔', styleTags: ['old money','minimalist'] },
+    { id: 'w3', name: 'Cargo Pants', category: 'Bottoms', color: 'Olive', season: 'All', image: '👖', styleTags: ['streetwear','techwear'] },
+    { id: 'w4', name: 'Pleated Trousers', category: 'Bottoms', color: 'Charcoal', season: 'All', image: '👖', styleTags: ['old money','minimalist'] },
+    { id: 'w5', name: 'Chunky Sneakers', category: 'Footwear', color: 'White', season: 'All', image: '👟', styleTags: ['streetwear','y2k'] },
+    { id: 'w6', name: 'Chelsea Boots', category: 'Footwear', color: 'Brown', season: 'Fall', image: '👢', styleTags: ['old money'] },
+    { id: 'w7', name: 'Denim Jacket', category: 'Outerwear', color: 'Blue', season: 'Spring', image: '🧥', styleTags: ['streetwear','y2k'] },
+    { id: 'w8', name: 'Wool Coat', category: 'Outerwear', color: 'Camel', season: 'Winter', image: '🧥', styleTags: ['old money','minimalist'] },
+    { id: 'w9', name: 'Silver Chain', category: 'Accessories', color: 'Silver', season: 'All', image: '📿', styleTags: ['streetwear','y2k'] },
+    { id: 'w10', name: 'Leather Tote', category: 'Accessories', color: 'Black', season: 'All', image: '👜', styleTags: ['minimalist','old money'] },
+  ];
+
+  const CATEGORIES = ['Tops', 'Bottoms', 'Footwear', 'Outerwear', 'Accessories'];
+  const SEASONS = ['All', 'Summer', 'Winter', 'Spring', 'Fall'];
+
+  // -------- THEME CONTEXT (simulated via state) --------
+  const useTheme = () => {
+    const [darkMode, setDarkMode] = useState(true);
+    useEffect(() => {
+      if (darkMode) {
+        document.body.classList.add('bg-[#0b0b12]', 'text-gray-200');
+        document.body.classList.remove('bg-gray-100', 'text-gray-800');
+      } else {
+        document.body.classList.add('bg-gray-100', 'text-gray-800');
+        document.body.classList.remove('bg-[#0b0b12]', 'text-gray-200');
+      }
+    }, [darkMode]);
+    return { darkMode, toggleTheme: () => setDarkMode(p => !p) };
+  };
+
+  // -------- MAIN APP --------
+  const App = () => {
+    const { darkMode, toggleTheme } = useTheme();
+    const [onboardingDone, setOnboardingDone] = useState(false);
+    const [persona, setPersona] = useState({ vibe: 'Minimalist', influencers: [], brands: [] });
+    const [wardrobe, setWardrobe] = useState(INITIAL_WARDROBE);
+    const [outfit, setOutfit] = useState({ Tops: null, Bottoms: null, Footwear: null, Outerwear: null, Accessories: null });
+    const [lockedSlots, setLockedSlots] = useState({ Tops: false, Bottoms: false, Footwear: false, Outerwear: false, Accessories: false });
+    const [savedOutfits, setSavedOutfits] = useState([]);
+    const [activeTab, setActiveTab] = useState('closet'); // closet, ai, trends, calendar
+    const [searchQuery, setSearchQuery] = useState('');
+    const [filterCategory, setFilterCategory] = useState('All');
+    const [trendResult, setTrendResult] = useState('');
+    const [loadingTrend, setLoadingTrend] = useState(false);
+
+    // ----- ONBOARDING COMPONENT -----
+    const Onboarding = ({ onComplete }) => {
+      const [step, setStep] = useState(0);
+      const [selectedVibe, setSelectedVibe] = useState('Minimalist');
+      const [selectedInfluencers, setSelectedInfluencers] = useState([]);
+      const [selectedBrands, setSelectedBrands] = useState([]);
+
+      const toggleItem = (arr, setArr, item) => {
+        setArr(prev => prev.includes(item) ? prev.filter(i => i !== item) : [...prev, item]);
+      };
+
+      const finish = () => {
+        onComplete({ vibe: selectedVibe, influencers: selectedInfluencers, brands: selectedBrands });
+      };
+
+      return (
+        <div className="min-h-screen flex items-center justify-center p-6 bg-gradient-to-br from-[#0d0d15] to-[#15131f]">
+          <div className={`w-full max-w-2xl p-8 rounded-3xl ${darkMode ? 'glass-dark' : 'glass-light'} shadow-2xl border ${darkMode ? 'border-white/10' : 'border-gray-200'}`}>
+            <div className="flex items-center gap-2 mb-8">
+              <i data-lucide="shirt" className="w-8 h-8 text-purple-400"></i>
+              <h1 className="text-3xl font-light tracking-tight">LUKU<span className="text-purple-400">.</span></h1>
+            </div>
+            <div className="mb-8">
+              <div className="w-full bg-gray-700/30 rounded-full h-1">
+                <div className={`h-1 rounded-full bg-gradient-to-r from-purple-400 to-pink-400 transition-all`} style={{ width: `${(step+1)/3*100}%` }}></div>
+              </div>
+            </div>
+            {step === 0 && (
+              <div className="fade-in">
+                <h2 className="text-2xl font-light mb-4">Your style vibe</h2>
+                <div className="grid grid-cols-2 gap-3">
+                  {STYLE_VIBES.map(v => (
+                    <button key={v} onClick={() => setSelectedVibe(v)}
+                      className={`p-3 rounded-xl text-left border transition ${selectedVibe === v ? 'border-purple-400 bg-purple-500/20' : 'border-gray-600/50 hover:bg-white/5'}`}>
+                      {v}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {step === 1 && (
+              <div className="fade-in">
+                <h2 className="text-2xl font-light mb-4">Fashion influencers</h2>
+                <div className="grid grid-cols-2 gap-3">
+                  {INFLUENCERS.map(inf => (
+                    <button key={inf} onClick={() => toggleItem(selectedInfluencers, setSelectedInfluencers, inf)}
+                      className={`p-3 rounded-xl text-left border transition ${selectedInfluencers.includes(inf) ? 'border-purple-400 bg-purple-500/20' : 'border-gray-600/50 hover:bg-white/5'}`}>
+                      {inf}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {step === 2 && (
+              <div className="fade-in">
+                <h2 className="text-2xl font-light mb-4">Favorite brands</h2>
+                <div className="grid grid-cols-2 gap-3">
+                  {BRANDS.map(b => (
+                    <button key={b} onClick={() => toggleItem(selectedBrands, setSelectedBrands, b)}
+                      className={`p-3 rounded-xl text-left border transition ${selectedBrands.includes(b) ? 'border-purple-400 bg-purple-500/20' : 'border-gray-600/50 hover:bg-white/5'}`}>
+                      {b}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="flex justify-between mt-10">
+              {step > 0 && <button onClick={() => setStep(s => s-1)} className="px-6 py-2 rounded-full border border-gray-500 text-sm hover:bg-white/5">Back</button>}
+              {step < 2 ? (
+                <button onClick={() => setStep(s => s+1)} className="ml-auto px-6 py-2 rounded-full bg-purple-500 text-white text-sm hover:bg-purple-600 transition">Continue</button>
+              ) : (
+                <button onClick={finish} className="ml-auto px-6 py-2 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 text-white text-sm font-medium hover:opacity-90 transition">Enter LUKU</button>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    // ----- WARDROBE MANAGER -----
+    const WardrobeManager = () => {
+      const [newItem, setNewItem] = useState({ name: '', category: 'Tops', color: '', season: 'All', image: '👕' });
+      const [showAdd, setShowAdd] = useState(false);
+      const filtered = wardrobe.filter(item => {
+        const matchSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) || item.color.toLowerCase().includes(searchQuery.toLowerCase());
+        const matchCat = filterCategory === 'All' || item.category === filterCategory;
+        return matchSearch && matchCat;
+      });
+
+      const addItem = () => {
+        if (!newItem.name.trim()) return;
+        const item = { ...newItem, id: 'w' + Date.now(), styleTags: [persona.vibe.toLowerCase()] };
+        setWardrobe(prev => [item, ...prev]);
+        setNewItem({ name: '', category: 'Tops', color: '', season: 'All', image: '👕' });
+        setShowAdd(false);
+      };
+
+      return (
+        <div className="fade-in">
+          <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+            <h2 className="text-2xl font-light flex items-center gap-2"><i data-lucide="archive" className="w-6 h-6 text-purple-400"></i>Virtual Closet</h2>
+            <button onClick={() => setShowAdd(!showAdd)} className="px-4 py-2 rounded-full bg-purple-500/20 border border-purple-400/50 text-sm flex items-center gap-2 hover:bg-purple-500/30 transition">
+              <i data-lucide="plus" className="w-4 h-4"></i> Add item
+            </button>
+          </div>
+          {showAdd && (
+            <div className={`p-4 rounded-2xl mb-6 ${darkMode ? 'glass-dark' : 'glass-light'} border ${darkMode ? 'border-white/10' : 'border-gray-200'} fade-in`}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                <input placeholder="Name" value={newItem.name} onChange={e => setNewItem({...newItem, name: e.target.value})} className="bg-transparent border border-gray-600/50 rounded-xl px-3 py-2 text-sm" />
+                <select value={newItem.category} onChange={e => setNewItem({...newItem, category: e.target.value})} className="bg-transparent border border-gray-600/50 rounded-xl px-3 py-2 text-sm">
+                  {CATEGORIES.map(c => <option key={c} className="bg-[#1a1a24]">{c}</option>)}
+                </select>
+                <input placeholder="Color" value={newItem.color} onChange={e => setNewItem({...newItem, color: e.target.value})} className="bg-transparent border border-gray-600/50 rounded-xl px-3 py-2 text-sm" />
+                <select value={newItem.season} onChange={e => setNewItem({...newItem, season: e.target.value})} className="bg-transparent border border-gray-600/50 rounded-xl px-3 py-2 text-sm">
+                  {SEASONS.map(s => <option key={s} className="bg-[#1a1a24]">{s}</option>)}
+                </select>
+              </div>
+              <div className="flex justify-end mt-3 gap-2">
+                <button onClick={() => setShowAdd(false)} className="px-4 py-1.5 rounded-full border border-gray-500 text-sm">Cancel</button>
+                <button onClick={addItem} className="px-4 py-1.5 rounded-full bg-purple-500 text-white text-sm">Save</button>
+              </div>
+            </div>
+          )}
+          <div className="flex flex-wrap gap-3 mb-6">
+            <div className="relative flex-1 min-w-[200px]">
+              <i data-lucide="search" className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"></i>
+              <input placeholder="Search by name or color..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full pl-10 pr-3 py-2 rounded-full bg-white/5 border border-gray-600/50 text-sm" />
+            </div>
+            <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className="px-4 py-2 rounded-full bg-white/5 border border-gray-600/50 text-sm">
+              <option value="All">All categories</option>
+              {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+            {filtered.map(item => (
+              <div key={item.id} className={`card-hover p-3 rounded-2xl ${darkMode ? 'glass-dark' : 'glass-light'} border ${darkMode ? 'border-white/5' : 'border-gray-200'}`}>
+                <div className="text-4xl mb-2">{item.image}</div>
+                <div className="font-medium text-sm truncate">{item.name}</div>
+                <div className="flex items-center justify-between mt-1">
+                  <span className="text-xs text-gray-400">{item.category}</span>
+                  <span className="text-xs px-1.5 py-0.5 rounded-full bg-purple-500/20 border border-purple-400/30">{item.color}</span>
+                </div>
+                <div className="text-[10px] text-gray-500 mt-1">{item.season}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    };
+
+    // ----- AI OOTD GENERATOR -----
+    const generateOutfit = useCallback(() => {
+      const getRandomItem = (category) => {
+        const items = wardrobe.filter(i => i.category === category);
+        if (!items.length) return null;
+        // style matching: prefer items with persona vibe tag
+        const preferred = items.filter(i => i.styleTags?.includes(persona.vibe.toLowerCase()));
+        const pool = preferred.length ? preferred : items;
+        return pool[Math.floor(Math.random() * pool.length)];
+      };
+
+      const newOutfit = { ...outfit };
+      CATEGORIES.forEach(cat => {
+        if (!lockedSlots[cat]) {
+          // smart layering: for outerwear if none available, skip
+          if (cat === 'Outerwear' && wardrobe.filter(i => i.category === 'Outerwear').length === 0) {
+            newOutfit[cat] = null;
+          } else {
+            newOutfit[cat] = getRandomItem(cat);
+          }
+        }
+      });
+      setOutfit(newOutfit);
+    }, [wardrobe, lockedSlots, outfit, persona.vibe]);
+
+    const toggleLock = (cat) => setLockedSlots(prev => ({ ...prev, [cat]: !prev[cat] }));
+
+    const saveOutfit = () => {
+      const items = Object.values(outfit).filter(Boolean);
+      if (items.length < 2) return;
+      const newSaved = { id: Date.now(), items: items.map(i => i.name), date: new Date().toISOString().split('T')[0] };
+      setSavedOutfits(prev => [newSaved, ...prev]);
+    };
+
+    const OutfitGenerator = () => {
+      const outfitItems = Object.entries(outfit).filter(([_, v]) => v);
+      return (
+        <div className="fade-in">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl font-light flex items-center gap-2"><i data-lucide="sparkles" className="w-6 h-6 text-purple-400"></i>AI Outfit</h2>
+            <button onClick={generateOutfit} className="px-5 py-2 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 text-white text-sm flex items-center gap-2 hover:opacity-90 transition">
+              <i data-lucide="shuffle" className="w-4 h-4"></i> Generate
+            </button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mb-6">
+            {CATEGORIES.map(cat => {
+              const item = outfit[cat];
+              return (
+                <div key={cat} className={`p-3 rounded-2xl ${darkMode ? 'glass-dark' : 'glass-light'} border ${darkMode ? 'border-white/10' : 'border-gray-200'} relative`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-medium text-gray-400">{cat}</span>
+                    <button onClick={() => toggleLock(cat)} className={`p-1 rounded-full ${lockedSlots[cat] ? 'text-purple-400' : 'text-gray-500'}`}>
+                      <i data-lucide={lockedSlots[cat] ? "lock" : "unlock"} className="w-3.5 h-3.5"></i>
+                    </button>
+                  </div>
+                  {item ? (
+                    <div className="text-center">
+                      <div className="text-3xl">{item.image}</div>
+                      <div className="text-xs truncate mt-1">{item.name}</div>
+                    </div>
+                  ) : (
+                    <div className="text-center text-gray-500 text-sm py-4">—</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex gap-3">
+            <button onClick={saveOutfit} disabled={outfitItems.length < 2} className="px-5 py-2 rounded-full border border-gray-500 text-sm flex items-center gap-2 disabled:opacity-40">
+              <i data-lucide="bookmark" className="w-4 h-4"></i> Save outfit
+            </button>
+          </div>
+          {savedOutfits.length > 0 && (
+            <div className="mt-8">
+              <h3 className="text-sm font-medium text-gray-400 mb-3">Saved outfits</h3>
+              <div className="flex flex-wrap gap-2">
+                {savedOutfits.slice(0,5).map(o => (
+                  <div key={o.id} className={`px-3 py-2 rounded-xl text-xs ${darkMode ? 'glass-dark' : 'glass-light'} border ${darkMode ? 'border-white/5' : 'border-gray-200'}`}>
+                    {o.items.join(' · ')}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    // ----- TREND RADAR (simulated Gemini API) -----
+    const fetchTrends = async () => {
+      setLoadingTrend(true);
+      // Simulate API call to Gemini with search grounding (mock)
+      setTimeout(() => {
+        setTrendResult(`**🔮 AI Trend Analysis (Gemini + Search)**\n\n• **Quiet luxury** continues to dominate — tonal layering, unbranded leather goods, and relaxed tailoring.\n• **Y2K revival** peaks with low-rise denim, chunky platforms, and metallic accessories.\n• **Techwear utility** – modular bags, water-repellent fabrics, and neutral palettes.\n• **Color of the season:** *Digital Lavender* paired with slate grey.\n• **Footwear:** chunky loafers and retro runners are trending +42% in searches.\n\n*Grounded via Google Search • live fashion blogs & runway data.*`);
+        setLoadingTrend(false);
+      }, 1500);
+    };
+
+    const TrendRadar = () => (
+      <div className="fade-in">
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-2xl font-light flex items-center gap-2"><i data-lucide="radar" className="w-6 h-6 text-purple-400"></i>Live Trend Radar</h2>
+          <button onClick={fetchTrends} disabled={loadingTrend} className="px-5 py-2 rounded-full bg-purple-500/20 border border-purple-400/50 text-sm flex items-center gap-2 hover:bg-purple-500/30 transition">
+            {loadingTrend ? <i data-lucide="loader-2" className="w-4 h-4 animate-spin"></i> : <i data-lucide="globe" className="w-4 h-4"></i>}
+            {loadingTrend ? 'Analyzing…' : 'Deep search'}
+          </button>
+        </div>
+        <div className={`p-6 rounded-2xl ${darkMode ? 'glass-dark' : 'glass-light'} border ${darkMode ? 'border-white/10' : 'border-gray-200'} min-h-[200px] whitespace-pre-line`}>
+          {trendResult ? (
+            <div className="text-sm leading-relaxed space-y-2">{trendResult.split('\n').map((line, i) => <p key={i}>{line}</p>)}</div>
+          ) : (
+            <div className="text-gray-400 text-sm flex flex-col items-center justify-center h-40">
+              <i data-lucide="sparkle" className="w-8 h-8 mb-2 opacity-40"></i>
+              <p>Run deep search to get AI-powered fashion trends</p>
+              <p className="text-xs mt-1 opacity-50">gemini-3-flash-preview · google search grounding</p>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+
+    // ----- CALENDAR & LOG -----
+    const OutfitCalendar = () => {
+      const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+      const outfitsForDate = savedOutfits.filter(o => o.date === selectedDate);
+
+      return (
+        <div className="fade-in">
+          <h2 className="text-2xl font-light flex items-center gap-2 mb-6"><i data-lucide="calendar" className="w-6 h-6 text-purple-400"></i>Outfit Calendar</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className={`p-4 rounded-2xl ${darkMode ? 'glass-dark' : 'glass-light'} border ${darkMode ? 'border-white/10' : 'border-gray-200'}`}>
+              <label className="text-xs text-gray-400 block mb-2">Pick a date</label>
+              <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} className="w-full bg-transparent border border-gray-600/50 rounded-xl px-3 py-2 text-sm" />
+            </div>
+            <div className={`p-4 rounded-2xl md:col-span-2 ${darkMode ? 'glass-dark' : 'glass-light'} border ${darkMode ? 'border-white/10' : 'border-gray-200'}`}>
+              <h3 className="text-sm font-medium text-gray-400 mb-3">Outfits on {selectedDate}</h3>
+              {outfitsForDate.length ? (
+                outfitsForDate.map(o => (
+                  <div key={o.id} className="mb-3 p-3 rounded-xl bg-white/5 border border-white/5">
+                    <div className="text-sm">{o.items.join(' · ')}</div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-gray-500">No outfits logged for this day.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    // ----- MAIN LAYOUT -----
+    if (!onboardingDone) return <Onboarding onComplete={(p) => { setPersona(p); setOnboardingDone(true); }} />;
+
+    return (
+      <div className={`min-h-screen ${darkMode ? 'bg-[#0b0b12] text-gray-200' : 'bg-gray-100 text-gray-800'}`}>
+        {/* header */}
+        <header className={`sticky top-0 z-30 ${darkMode ? 'glass-dark' : 'glass-light'} border-b ${darkMode ? 'border-white/10' : 'border-gray-200'} px-4 py-3 flex items-center justify-between`}>
+          <div className="flex items-center gap-2">
+            <i data-lucide="shirt" className="w-6 h-6 text-purple-400"></i>
+            <span className="text-xl font-light tracking-tight">LUKU<span className="text-purple-400">.</span></span>
+          </div>
+          <div className="flex items-center gap-3">
+            <button onClick={toggleTheme} className="p-2 rounded-full hover:bg-white/10 transition">
+              <i data-lucide={darkMode ? "sun" : "moon"} className="w-5 h-5"></i>
+            </button>
+            <div className="text-xs px-3 py-1 rounded-full bg-purple-500/20 border border-purple-400/30">{persona.vibe}</div>
+          </div>
+        </header>
+
+        {/* tab nav */}
+        <div className="flex justify-center gap-1 px-4 py-4">
+          {['closet', 'ai', 'trends', 'calendar'].map(tab => (
+            <button key={tab} onClick={() => setActiveTab(tab)}
+              className={`px-4 py-2 rounded-full text-sm capitalize transition ${activeTab === tab ? 'bg-purple-500/20 border border-purple-400/50' : 'hover:bg-white/5'}`}>
+              {tab === 'ai' ? 'AI OOTD' : tab}
+            </button>
+          ))}
+        </div>
+
+        {/* main content */}
+        <main className="max-w-6xl mx-auto px-4 pb-20">
+          {activeTab === 'closet' && <WardrobeManager />}
+          {activeTab === 'ai' && <OutfitGenerator />}
+          {activeTab === 'trends' && <TrendRadar />}
+          {activeTab === 'calendar' && <OutfitCalendar />}
+        </main>
+
+        {/* footer / persona summary */}
+        <footer className={`fixed bottom-0 left-0 right-0 ${darkMode ? 'glass-dark' : 'glass-light'} border-t ${darkMode ? 'border-white/10' : 'border-gray-200'} px-4 py-2 flex justify-center gap-4 text-xs text-gray-400`}>
+          <span>✨ {persona.vibe}</span>
+          <span>·</span>
+          <span>{persona.influencers.length} influencers</span>
+          <span>·</span>
+          <span>{persona.brands.length} brands</span>
+        </footer>
+      </div>
+    );
+  };
+
+  // render
+  const root = ReactDOM.createRoot(document.getElementById('root'));
+  root.render(<App />);
+
+  // re-run lucide icon creation when DOM updates
+  const observer = new MutationObserver(() => {
+    if (window.lucide) window.lucide.createIcons();
+  });
+  observer.observe(document.body, { childList: true, subtree: true, attributes: false });
+  setTimeout(() => { if (window.lucide) window.lucide.createIcons(); }, 100);
+</script>
+</body>
+</html>
